@@ -22,3 +22,7 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+backend/venv/
+backend/chat_histories/
+__pycache__/
