@@ -7,6 +7,7 @@ import chromadb
 from chromadb.utils import embedding_functions
 import ollama
 import json
+import psutil
 from pathlib import Path
 from datetime import datetime
 
@@ -29,8 +30,11 @@ chat_history = []
 EMBED_MODEL = "sentence-transformers/all-MiniLM-L6-v2"
 embed_fn = embedding_functions.SentenceTransformerEmbeddingFunction(model_name=EMBED_MODEL)
 
+# --- RAM-based model routing ---
+TOTAL_RAM_GB = psutil.virtual_memory().total / (1024 ** 3)
 FLASH_MODEL = "llama3.2:3b"
-PRO_MODEL = "llama3.1:8b"
+PRO_MODEL = "llama3.1:8b" if TOTAL_RAM_GB >= 14 else "llama3.2:3b"
+print(f"System RAM: {TOTAL_RAM_GB:.1f}GB — Pro model set to: {PRO_MODEL}")
 
 COMPLEX_KEYWORDS = [
     "compare", "contrast", "analyse", "analyze", "explain", "summarise",
@@ -159,7 +163,7 @@ async def upload_pdf(file: UploadFile = File(...)):
 
     pdf_bytes = await file.read()
     current_filename = file.filename
-    chat_history = load_history(file.filename)  # restore previous history
+    chat_history = load_history(file.filename)
 
     try:
         chroma_client.delete_collection("pdf_chunks")
@@ -179,7 +183,7 @@ async def upload_pdf(file: UploadFile = File(...)):
     return {
         "status": f"Indexed {len(chunks)} chunks successfully!",
         "filename": file.filename,
-        "history": chat_history  # send back so frontend can restore messages
+        "history": chat_history
     }
 
 @app.post("/chat")
@@ -215,7 +219,6 @@ async def chat_endpoint(message: str = Form(...), model: str = Form(...)):
             full_response += token
             yield f"data: {json.dumps({'token': token})}\n\n"
 
-        # Save to persistent history
         chat_history.append({"user": message, "assistant": full_response})
         save_history(current_filename, chat_history)
 
@@ -245,7 +248,6 @@ async def get_sessions():
             else:
                 label = f"{days_ago}d ago"
 
-            # Reconstruct original filename from path stem
             original_name = path.stem.replace("_", " ")
             if not original_name.endswith(".pdf"):
                 original_name += ".pdf"
@@ -259,7 +261,6 @@ async def get_sessions():
             })
         except:
             pass
-    # Sort by most recent first
     sessions.sort(key=lambda x: x["mtime"], reverse=True)
     return {"sessions": sessions}
 

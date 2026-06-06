@@ -26,7 +26,9 @@ function FormattedMessage({ content }) {
   const elements = []
   let bulletBuffer = []
   let codeBuffer = []
+  let tableBuffer = []
   let inCode = false
+  let inTable = false
   let codeLang = ''
 
   const flushBullets = (key) => {
@@ -49,10 +51,34 @@ function FormattedMessage({ content }) {
     }
   }
 
+  const flushTable = (key) => {
+    if (tableBuffer.length > 0) {
+      elements.push(
+        <div key={`table-${key}`} className="msg-table-wrap">
+          <table className="msg-table">
+            <tbody>
+              {tableBuffer.map((row, ri) => (
+                <tr key={ri} className={ri === 0 ? 'msg-table-header' : ''}>
+                  {row.map((cell, ci) => (
+                    <td key={ci} className="msg-td">{renderInline(cell.trim())}</td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )
+      tableBuffer = []
+      inTable = false
+    }
+  }
+
   lines.forEach((line, i) => {
+    // Code blocks
     if (line.startsWith('```')) {
       if (!inCode) {
         flushBullets(i)
+        flushTable(i)
         inCode = true
         codeLang = line.replace('```', '').trim()
       } else {
@@ -63,21 +89,51 @@ function FormattedMessage({ content }) {
     }
     if (inCode) { codeBuffer.push(line); return }
 
-    if (line.startsWith('### ') || line.startsWith('## ')) {
+    // Table rows
+    if (line.startsWith('|')) {
       flushBullets(i)
-      elements.push(<h3 key={i} className="msg-heading">{line.replace(/^##+ /, '')}</h3>)
-    } else if (line.startsWith('- ') || line.startsWith('* ') || line.match(/^[-–]\s/)) {
-      bulletBuffer.push(<li key={i} className="msg-bullet">{renderInline(line.replace(/^[-–*] /, ''))}</li>)
+      const cells = line.split('|').filter((_, ci) => ci > 0 && ci < line.split('|').length - 1)
+      // Skip separator rows like |---|---|
+      if (cells.every(c => c.trim().match(/^[-: ]+$/))) return
+      inTable = true
+      tableBuffer.push(cells)
+      return
+    } else if (inTable) {
+      flushTable(i)
+    }
+
+    // Headings — handle # through ######
+    if (line.match(/^#{1,6} /)) {
+      flushBullets(i)
+      const text = line.replace(/^#{1,6} /, '')
+      const level = line.match(/^(#{1,6})/)[1].length
+      const size = level <= 2 ? 'msg-heading--lg' : level <= 4 ? 'msg-heading--md' : 'msg-heading--sm'
+      elements.push(<h3 key={i} className={`msg-heading ${size}`}>{renderInline(text)}</h3>)
+
+    // Bullet points
+    } else if (line.match(/^[-–*•] /)) {
+      bulletBuffer.push(<li key={i} className="msg-bullet">{renderInline(line.replace(/^[-–*•] /, ''))}</li>)
+
+    // Numbered lists
+    } else if (line.match(/^\d+\. /)) {
+      bulletBuffer.push(<li key={i} className="msg-bullet msg-bullet--numbered">{renderInline(line.replace(/^\d+\. /, ''))}</li>)
+
+    // Empty line
     } else if (line.trim() === '') {
       flushBullets(i)
       elements.push(<br key={i} />)
+
+    // Regular paragraph
     } else {
       flushBullets(i)
       elements.push(<p key={i} className="msg-para">{renderInline(line)}</p>)
     }
   })
+
   flushBullets('end')
   flushCode('end')
+  flushTable('end')
+
   return <div className="formatted-message">{elements}</div>
 }
 
@@ -183,7 +239,6 @@ export default function App() {
   const bottomRef = useRef()
   const textareaRef = useRef()
 
-  // Health check
   useEffect(() => {
     const check = async () => {
       try {
@@ -196,7 +251,6 @@ export default function App() {
     return () => clearInterval(interval)
   }, [])
 
-  // Load sessions list
   const loadSessions = useCallback(async () => {
     try {
       const res = await fetch('http://localhost:8000/sessions')
@@ -211,7 +265,6 @@ export default function App() {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages, loading])
 
-  // Load a previous session
   const handleSelectSession = useCallback(async (session) => {
     try {
       const res = await fetch(`http://localhost:8000/sessions/${encodeURIComponent(session.filename)}`)
@@ -251,8 +304,6 @@ export default function App() {
         setProcessing(false)
         const id = Date.now()
         setNewMsgId(id)
-
-        // Restore previous messages if history exists
         if (data.history && data.history.length > 0) {
           const restored = []
           for (const h of data.history) {

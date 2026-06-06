@@ -728,3 +728,19 @@ body {
   text-align: center;
   opacity: 0.6;
 }
+
+/* Tables */
+.msg-table-wrap { overflow-x: auto; margin: 8px 0; border-radius: 8px; border: 1px solid var(--border2); }
+.msg-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.msg-table-header td { background: rgba(255,255,255,0.05); font-weight: 600; }
+.msg-td { border: 1px solid var(--border); padding: 8px 12px; text-align: left; vertical-align: top; }
+.msg-td:first-child { border-left: none; }
+.msg-td:last-child { border-right: none; }
+
+/* Heading sizes */
+.msg-heading--lg { font-size: 15px; }
+.msg-heading--md { font-size: 13px; }
+.msg-heading--sm { font-size: 12px; opacity: 0.85; }
+
+/* Numbered list */
+.msg-bullet--numbered { list-style: decimal; }
