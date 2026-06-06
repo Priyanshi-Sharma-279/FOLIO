@@ -26,3 +26,8 @@ dist-ssr
 backend/venv/
 backend/chat_histories/
 __pycache__/
+
+backend/build/
+backend/dist/
+backend/*.spec
+src-tauri/binaries/
