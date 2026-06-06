@@ -185,7 +185,7 @@ Folio is designed for sensitive documents. Your PDFs and conversations never lea
 
 | Contributor | Role |
 |---|---|
-| [Priyanshi Sharma](https://github.com/Priyanshi-Sharma-279) | Frontend Design & UI,macOS Build & Distribution | 
+| [Priyanshi Sharma](https://github.com/Priyanshi-Sharma-279) | Frontend Design & UI · macOS Build & Distribution | 
 | [Kartik Dubey](https://github.com/kartikdubey17) | Backend, RAG Pipeline & Desktop Integration |
 
 ---
