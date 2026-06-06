@@ -1,7 +1,153 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
 import { Upload, Send, FileText, X, Loader2, MessageSquare, BookOpen, Trash2, Clock } from 'lucide-react'
 import './App.css'
+function SetupWizard({ onComplete }) {
+  const [status, setStatus] = useState(null)
+  const [step, setStep] = useState('checking') // checking, needs_ollama, pulling, done
+  const [pullLog, setPullLog] = useState('')
+  const [progress, setProgress] = useState(0)
 
+  useEffect(() => {
+    checkStatus()
+  }, [])
+
+  const checkStatus = async () => {
+    try {
+      const res = await fetch('http://localhost:8000/setup/status')
+      const data = await res.json()
+      setStatus(data)
+      if (!data.ollama_installed) {
+        setStep('needs_ollama')
+      } else if (!data.model_ready) {
+        setStep('needs_model')
+      } else {
+        setStep('done')
+        onComplete()
+      }
+    } catch {
+      setStep('backend_loading')
+      setTimeout(checkStatus, 2000)
+    }
+  }
+
+  const pullModel = async () => {
+    setStep('pulling')
+    const res = await fetch('http://localhost:8000/setup/pull_model', { method: 'POST' })
+    const reader = res.body.getReader()
+    const decoder = new TextDecoder()
+    let prog = 0
+
+    while (true) {
+      const { done, value } = await reader.read()
+      if (done) break
+      const text = decoder.decode(value)
+      const lines = text.split('\n').filter(l => l.startsWith('data: '))
+      for (const line of lines) {
+        const raw = line.replace('data: ', '').trim()
+        try {
+          const parsed = JSON.parse(raw)
+          if (parsed.line) {
+            setPullLog(parsed.line)
+            // estimate progress from ollama output
+            const match = parsed.line.match(/(\d+)%/)
+            if (match) setProgress(parseInt(match[1]))
+          }
+          if (parsed.done) {
+            setStep('done')
+            onComplete()
+          }
+        } catch { }
+      }
+    }
+  }
+
+  if (step === 'checking' || step === 'backend_loading') return (
+    <div className="setup-screen">
+      <div className="setup-card">
+        <div className="setup-logo">
+          <div className="logo__mark"><div className="logo__dot" /></div>
+          <span className="logo__name">Folio</span>
+        </div>
+        <Loader2 size={24} className="processing__spin" style={{margin: '24px auto'}} />
+        <p className="setup-sub">Starting up…</p>
+      </div>
+    </div>
+  )
+
+  if (step === 'needs_ollama') return (
+    <div className="setup-screen">
+      <div className="setup-card">
+        <div className="setup-logo">
+          <div className="logo__mark"><div className="logo__dot" /></div>
+          <span className="logo__name">Folio</span>
+        </div>
+        <h2 className="setup-title">One-time Setup</h2>
+        <p className="setup-sub">Folio needs Ollama to run AI models locally on your machine.</p>
+        <div className="setup-steps">
+          <div className="setup-step">
+            <span className="setup-step__num">1</span>
+            <div>
+              <p className="setup-step__title">Download Ollama</p>
+              <p className="setup-step__desc">Visit ollama.com and install the app</p>
+            </div>
+            <a href="https://ollama.com/download" target="_blank" className="setup-btn setup-btn--primary">
+              Download
+            </a>
+          </div>
+          <div className="setup-step">
+            <span className="setup-step__num">2</span>
+            <div>
+              <p className="setup-step__title">Come back here</p>
+              <p className="setup-step__desc">Click continue once Ollama is installed</p>
+            </div>
+          </div>
+        </div>
+        <button className="setup-btn setup-btn--primary" style={{width:'100%', marginTop:'16px'}} onClick={checkStatus}>
+          Continue →
+        </button>
+      </div>
+    </div>
+  )
+
+  if (step === 'needs_model') return (
+    <div className="setup-screen">
+      <div className="setup-card">
+        <div className="setup-logo">
+          <div className="logo__mark"><div className="logo__dot" /></div>
+          <span className="logo__name">Folio</span>
+        </div>
+        <h2 className="setup-title">Download AI Model</h2>
+        <p className="setup-sub">
+          Your system has <strong>{status?.ram_gb}GB RAM</strong>. 
+          Folio will download <strong>{status?.recommended_model}</strong> (~{status?.ram_gb >= 14 ? '5' : '2'}GB).
+        </p>
+        <p className="setup-sub" style={{marginTop: '8px', opacity: 0.6}}>This only happens once.</p>
+        <button className="setup-btn setup-btn--primary" style={{width:'100%', marginTop:'24px'}} onClick={pullModel}>
+          Download Model
+        </button>
+      </div>
+    </div>
+  )
+
+  if (step === 'pulling') return (
+    <div className="setup-screen">
+      <div className="setup-card">
+        <div className="setup-logo">
+          <div className="logo__mark"><div className="logo__dot" /></div>
+          <span className="logo__name">Folio</span>
+        </div>
+        <h2 className="setup-title">Downloading Model…</h2>
+        <div className="setup-progress">
+          <div className="setup-progress__bar" style={{width: `${progress}%`}} />
+        </div>
+        <p className="setup-sub" style={{marginTop: '12px'}}>{progress}% — {pullLog || 'Starting download…'}</p>
+        <p className="setup-sub" style={{opacity: 0.5, marginTop: '8px'}}>This may take a few minutes depending on your connection.</p>
+      </div>
+    </div>
+  )
+
+  return null
+}
 function TypingIndicator() {
   return (
     <div className="typing-indicator">
@@ -226,6 +372,7 @@ function ChatHistoryPanel({ sessions, activeFile, onSelect, onDelete }) {
 }
 
 export default function App() {
+  const [setupDone, setSetupDone] = useState(false)
   const [file, setFile] = useState(null)
   const [messages, setMessages] = useState([])
   const [input, setInput] = useState('')
@@ -385,6 +532,7 @@ export default function App() {
   }
 
   const isEmpty = messages.length === 0 && !processing
+  if (!setupDone) return <SetupWizard onComplete={() => setSetupDone(true)} />
 
   return (
     <div className="app">

@@ -8,6 +8,9 @@ from chromadb.utils import embedding_functions
 import ollama
 import json
 import psutil
+import subprocess
+import platform
+import os
 from pathlib import Path
 from datetime import datetime
 
@@ -35,6 +38,30 @@ TOTAL_RAM_GB = psutil.virtual_memory().total / (1024 ** 3)
 FLASH_MODEL = "llama3.2:3b"
 PRO_MODEL = "llama3.1:8b" if TOTAL_RAM_GB >= 14 else "llama3.2:3b"
 print(f"System RAM: {TOTAL_RAM_GB:.1f}GB — Pro model set to: {PRO_MODEL}")
+
+# --- Find Ollama automatically ---
+def find_ollama() -> str:
+    username = os.environ.get("USERNAME", os.environ.get("USER", ""))
+    common_paths = [
+        rf"C:\Users\{username}\AppData\Local\Programs\Ollama\ollama.exe",
+        r"C:\Program Files\Ollama\ollama.exe",
+        r"C:\Program Files (x86)\Ollama\ollama.exe",
+        "/usr/local/bin/ollama",        # Mac/Linux
+        "/usr/bin/ollama",              # Mac/Linux alt
+        "ollama"                        # fallback to PATH
+    ]
+    for path in common_paths:
+        try:
+            result = subprocess.run([path, "--version"], capture_output=True, text=True, timeout=5)
+            if result.returncode == 0:
+                print(f"Ollama found at: {path}")
+                return path
+        except:
+            continue
+    print("Ollama not found in common paths, falling back to PATH")
+    return "ollama"
+
+OLLAMA_PATH = find_ollama()
 
 COMPLEX_KEYWORDS = [
     "compare", "contrast", "analyse", "analyze", "explain", "summarise",
@@ -156,6 +183,49 @@ def extract_chunks(pdf_bytes: bytes, chunk_size: int = 500, overlap: int = 50) -
 @app.get("/health")
 async def health():
     return {"status": "online"}
+
+@app.get("/setup/status")
+async def setup_status():
+    try:
+        result = subprocess.run([OLLAMA_PATH, "--version"], capture_output=True, text=True, timeout=5)
+        ollama_installed = result.returncode == 0
+    except:
+        ollama_installed = False
+
+    model_ready = False
+    if ollama_installed:
+        try:
+            result = subprocess.run([OLLAMA_PATH, "list"], capture_output=True, text=True, timeout=10)
+            needed = "llama3.1:8b" if TOTAL_RAM_GB >= 14 else "llama3.2:3b"
+            model_ready = needed in result.stdout
+        except:
+            pass
+
+    return {
+        "ollama_installed": ollama_installed,
+        "model_ready": model_ready,
+        "ram_gb": round(TOTAL_RAM_GB, 1),
+        "recommended_model": "llama3.1:8b" if TOTAL_RAM_GB >= 14 else "llama3.2:3b"
+    }
+
+@app.post("/setup/pull_model")
+async def pull_model():
+    model = "llama3.1:8b" if TOTAL_RAM_GB >= 14 else "llama3.2:3b"
+
+    async def stream():
+        process = subprocess.Popen(
+            [OLLAMA_PATH, "pull", model],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True
+        )
+        for line in process.stdout:
+            yield f"data: {json.dumps({'line': line.strip()})}\n\n"
+        process.wait()
+        yield f"data: {json.dumps({'done': True})}\n\n"
+
+    return StreamingResponse(stream(), media_type="text/event-stream",
+                             headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
 
 @app.post("/upload")
 async def upload_pdf(file: UploadFile = File(...)):
