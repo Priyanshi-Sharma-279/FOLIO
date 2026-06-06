@@ -1,6 +1,4 @@
-bash
 
-cat > /mnt/user-data/outputs/README.md << 'EOF'
 <div align="center">
 
 <img src="src-tauri/icons/icon.png" width="80" height="80" alt="Folio Icon" />
